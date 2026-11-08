@@ -1,0 +1,888 @@
+------------------------------------------------------------------------------------------------------------------------------------------
+      name:  <unnamed>
+       log:  /Users/zoedilieto/Desktop/coding sample/outputs/INSPIRE_analysis.log
+  log type:  text
+ opened on:   4 Nov 2026, 18:05:12
+
+. 
+. * Keep a self-contained copy of the supplied materials for reproducibility.
+. foreach f in "School data.csv" "Teacher data.csv" "Admin Data.xlsx" "Codebook dataset.xlsx" "Stata Task - INSPIRE Internship Program A.p
+> df" {
+  2.     confirm file "`f'"
+  3.     copy "`f'" "raw_data/`f'", replace
+  4. }
+
+. 
+. /* QUESTION 1: . RCT explanation
+> 
+> An RCT randomly allocates eligible units to treatment and control groups, every 
+> school has a strictly positive and strictly lower than one probability of getting 
+> assigned to the treatment.
+> 
+> Here, every schools reports results from a survey carried out in Tanzania. Thus, 
+> collecting baseline data for a future RCT experiment. For the 
+> experiment to be well-set the researcher should consider that the schools should 
+> be comparable in terms of students. One technique that coud be implemented is 
+> stratified randomization, where treatment is allocated to 50% of the school 
+> sample and schools are selected based on being located to similar 
+> neighbourhoods in terms of comparability.
+>  
+> Given the setting it is also important to consider ethical constents, and required 
+> power before launching the experiment. 
+> 
+> */
+. 
+. * QUESTION 2. ******************************************************************
+. 
+. import delimited using "raw_data/School data.csv", ///
+>     clear varnames(1) encoding("UTF-8")
+(12 vars, 200 obs)
+
+.  
+. * Report values outside the permitted codes, including missing responses.
+. * Consent: 1 = Yes; 2 = No.
+. count if !inlist(consent, 1, 2)
+  0
+
+. list schoolid consent if !inlist(consent, 1, 2), noobs
+
+. 
+. * Ownership: 1 = Public; 2 = Private; -99 = Don't know.
+. count if !inlist(own, 1, 2, -99)
+  1
+
+. list schoolid own if !inlist(own, 1, 2, -99), noobs
+
+  +----------------+
+  | schoolid   own |
+  |----------------|
+  |   106203     . |
+  +----------------+
+
+. 
+. * Main track: 1-9; -96 = Other; -99 = Don't know.
+. count if !inlist(main_sub, 1, 2, 3, 4, 5, 6, 7, 8, 9, -96, -99)
+  0
+
+. list schoolid main_sub if ///
+>     !inlist(main_sub, 1, 2, 3, 4, 5, 6, 7, 8, 9, -96, -99), noobs
+
+. 
+. * Other-track text should appear only when Other (-96) is selected.
+. list schoolid main_sub main_sub_other if ///
+>     (main_sub != -96 & strtrim(main_sub_other) != "") | ///
+>     (main_sub == -96 & strtrim(main_sub_other) == ""), noobs
+
+  +-----------------------------------------------+
+  | schoolid   main_sub            main_sub_other |
+  |-----------------------------------------------|
+  |   106109          8                  religion |
+  |   108210          2   Not meant to be enabled |
+  +-----------------------------------------------+
+
+. 
+. * Review comments that may require corrections.
+. list schoolid consent own main_sub interviewer_comment if ///
+>     !inlist(lower(strtrim(interviewer_comment)), ///
+>     "", "ok", "nothing", "all good", "respondent was collaborative"), noobs
+
+  +--------------------------------------------------------------------------------------------------------------+
+  | schoolid   consent   own   main_sub                                                      interviewer_comment |
+  |--------------------------------------------------------------------------------------------------------------|
+  |   106203         1     .          8                       this is a public school, could not enter the value |
+  |   107204         2     1          1   DROP THE OBSERVATION head teacher decided to withdraw at a later stage |
+  |   108209         1     1          8             THIS IS A PRIVATE SCHOOL WITH MATHS TRACK. AMEND THE ANSWERS |
+  +--------------------------------------------------------------------------------------------------------------+
+
+.         
+. /*COMMENT: 
+> The dataset contains 200 uniquely identified schools, with complete IDs and valid, positive integer school counts.
+> All observed categorical codes are permitted, but school 106203 has missing ownership; its comment identifies it as public. Schools 1061
+> 09 and 108210 contain other-track text although Other was not selected. Comments also identify school 108209 as private with a Maths tra
+> ck and confirm school 107204 withdrew consent.*/
+. 
+. 
+. * QUESTION 3: ******************************************************************
+. 
+. * School 106203: ownership is missing, but the comment says public.
+. list schoolid own interviewer_comment if schoolid == 106203
+
+     +---------------------------------------------------------------------+
+     | schoolid   own                                  interviewer_comment |
+     |---------------------------------------------------------------------|
+113. |   106203     .   this is a public school, could not enter the value |
+     +---------------------------------------------------------------------+
+
+. replace own = 1 if schoolid == 106203
+(1 real change made)
+
+. 
+. * Schools 106109 and 108210: clear other-track text because Other was not selected.
+. replace main_sub_other = "" if inlist(schoolid, 106109, 108210)
+(2 real changes made)
+
+. 
+. * School 108209: recorded as public with a Religious Studies track.
+. * The comment says private with a Maths track: correct both values.
+. list schoolid own main_sub interviewer_comment if schoolid == 108209
+
+     +------------------------------------------------------------------------------------------+
+     | schoolid   own   main_sub                                            interviewer_comment |
+     |------------------------------------------------------------------------------------------|
+159. |   108209     1          8   THIS IS A PRIVATE SCHOOL WITH MATHS TRACK. AMEND THE ANSWERS |
+     +------------------------------------------------------------------------------------------+
+
+. replace own = 2 if schoolid == 108209
+(1 real change made)
+
+. replace main_sub = 1 if schoolid == 108209
+(1 real change made)
+
+. 
+. * School 107204: the head teacher withdrew consent.
+. list schoolid consent interviewer_comment if schoolid == 107204
+
+     +---------------------------------------------------------------------------------------------+
+     | schoolid   consent                                                      interviewer_comment |
+     |---------------------------------------------------------------------------------------------|
+134. |   107204         2   DROP THE OBSERVATION head teacher decided to withdraw at a later stage |
+     +---------------------------------------------------------------------------------------------+
+
+. drop if schoolid == 107204
+(1 observation deleted)
+
+. 
+. 
+. * Comments have been incorporated into the corrections.
+. drop interviewer_comment
+
+. 
+. * Save the cleaned school dataset before the Q4 merge.
+. save "clean_data/school_clean_before_merge.dta", replace
+file clean_data/school_clean_before_merge.dta saved
+
+. 
+. * QUESTION 4  ******************************************************************
+. import excel using "raw_data/Admin Data.xlsx", ///
+>     firstrow case(lower) clear
+(8 vars, 20 obs)
+
+. 
+. * The Excel header "long" is imported as f because long is reserved.
+. rename f longitude
+
+. 
+. * Confirm villageid is numeric and uniquely identifies each village.
+. confirm numeric variable villageid
+
+. isid villageid
+
+. 
+. * Remember the administrative column order.
+. ds
+region        villageid     village_name  type          lat           longitude     elev          pop
+
+. local admin_vars `r(varlist)'
+
+. tempfile admin
+
+. save `admin'
+file /var/folders/nd/_fd08bgj57560pfdl9wxkf200000gn/T//S_21206.000001 saved as .dta format
+
+. 
+. * Load the cleaned school dataset.
+. use "clean_data/school_clean_before_merge.dta", clear
+
+. confirm numeric variable villageid
+
+. 
+. * Remember school columns, excluding the shared villageid.
+. ds villageid, not
+schoolid      timebegun     totstuds      tot_teach     main_sub
+interviewe~d  consent       tot_classr~s  own           main_sub_o~r
+
+. local school_vars `r(varlist)'
+
+. 
+. * Merge multiple schools to one administrative record per village.
+. merge m:1 villageid using `admin'
+
+    Result                      Number of obs
+    -----------------------------------------
+    Not matched                             0
+    Matched                               199  (_merge==3)
+    -----------------------------------------
+
+. tabulate _merge
+
+   Matching result from |
+                  merge |      Freq.     Percent        Cum.
+------------------------+-----------------------------------
+            Matched (3) |        199      100.00      100.00
+------------------------+-----------------------------------
+                  Total |        199      100.00
+
+. assert _merge == 3
+
+. drop _merge
+
+. 
+. * Administrative columns first, followed by school columns.
+. * villageid appears once, among the administrative columns.
+. order `admin_vars' `school_vars'
+
+. 
+. save "clean_data/admin_school_merged.dta", replace
+file clean_data/admin_school_merged.dta saved
+
+. 
+. * QUESTION 5 *******************************************************************
+. 
+. * Replace text categories with their codebook codes.
+. replace type = "1" if upper(strtrim(type)) == "URBAN"
+(100 real changes made)
+
+. replace type = "2" if upper(strtrim(type)) == "RURAL"
+(79 real changes made)
+
+. replace type = "3" if upper(strtrim(type)) == "MIXED"
+(20 real changes made)
+
+. 
+. * Convert the column from string to numeric.
+. destring type, replace
+type: all characters numeric; replaced as byte
+
+. 
+. * Apply the variable description and value labels.
+. label variable type "Type of village"
+
+. label define type_lbl 1 "URBAN" 2 "RURAL" 3 "MIXED", replace
+
+. label values type type_lbl
+
+. 
+. assert inlist(type, 1, 2, 3)
+
+. 
+. * QUESTION 6********************************************************************
+. 
+. * Q6 has an unresolved source inconsistency: the actual regions are Lobaye
+. * and Ouaka, not Kilimanjaro and Dodoma.
+. * assign 1 = Lobaye and 2 = Ouaka instead of the names in the instructions.
+. gen byte regionid = .
+(199 missing values generated)
+
+. replace regionid = 1 if lower(strtrim(region)) == "lobaye"
+(100 real changes made)
+
+. replace regionid = 2 if lower(strtrim(region)) == "ouaka"
+(99 real changes made)
+
+. 
+. label variable regionid "Region identifier"
+
+. label define region_lbl 1 "Lobaye" 2 "Ouaka", replace
+
+. label values regionid region_lbl
+
+. 
+. assert !missing(regionid)
+
+. order regionid, after(region)
+
+. 
+. * QUESTION 7 *******************************************************************
+. 
+. gen double timebegun_dt = clock(strtrim(timebegun), "MDYhm")
+
+. 
+. * Display, for example: 18oct2024 10:18.
+. format timebegun_dt %tcDDmonCCYY_HH:MM
+
+. 
+. * Verify that all nonempty timestamps converted successfully.
+. assert !missing(timebegun_dt) if strtrim(timebegun) != ""
+
+. 
+. * Replace the original column, preserving its position and name.
+. order timebegun_dt, before(timebegun)
+
+. drop timebegun
+
+. rename timebegun_dt timebegun
+
+. label variable timebegun "Interview start date and time"
+
+. 
+. * QUESTION 8 *******************************************************************
+. 
+. * Group Maths (1), Science (2) and IT Technology (3) into category 100.
+. * Keep main_sub unchanged.
+. clonevar track_group = main_sub
+
+. replace track_group = 100 if inlist(main_sub, 1, 2, 3)
+(69 real changes made)
+
+. 
+. label variable track_group "School track with scientific aggregate"
+
+. label define track_group_lbl ///
+>     -99 "Don't know" -96 "Other" ///
+>     4 "French (Literature)" 5 "Humanities (Art and Culture)" ///
+>     6 "English (Literature)" 7 "Professional tracks" ///
+>     8 "Religious Studies" 9 "Economics/Social track" ///
+>     100 "SCIENTIFIC AGGREGATE", replace
+
+. label values track_group track_group_lbl
+
+. 
+. * Row percentages show the track shares within each village setting.
+. * Exclude unknown or missing tracks from the denominator.
+. tabulate type track_group if !missing(track_group) & track_group != -99, row
+
++----------------+
+| Key            |
+|----------------|
+|   frequency    |
+| row percentage |
++----------------+
+
+   Type of |                         School track with scientific aggregate
+   village |     Other  French (L  Humanitie  English (  Professio  Religious  Economics  SCIENTIFI |     Total
+-----------+----------------------------------------------------------------------------------------+----------
+     URBAN |         3         13          8         15          5         17          6         33 |       100 
+           |      3.00      13.00       8.00      15.00       5.00      17.00       6.00      33.00 |    100.00 
+-----------+----------------------------------------------------------------------------------------+----------
+     RURAL |         0         15          7          2         11         10          5         29 |        79 
+           |      0.00      18.99       8.86       2.53      13.92      12.66       6.33      36.71 |    100.00 
+-----------+----------------------------------------------------------------------------------------+----------
+     MIXED |         0          4          2          1          3          2          1          7 |        20 
+           |      0.00      20.00      10.00       5.00      15.00      10.00       5.00      35.00 |    100.00 
+-----------+----------------------------------------------------------------------------------------+----------
+     Total |         3         32         17         18         19         29         12         69 |       199 
+           |      1.51      16.08       8.54       9.05       9.55      14.57       6.03      34.67 |    100.00 
+
+. 
+. /* COMMENT: 
+> The share of schools with a scientific track is 33.00% in urban settings,
+> 36.71% in rural settings and 35.00% in mixed settings.
+> Scientific tracks include Maths, Science and IT Technology.
+> */
+. 
+. * QUESTION 9********************************************************************
+. save "clean_data/admin_school_clean.dta", replace
+file clean_data/admin_school_clean.dta saved
+
+. 
+. * QUESTION 10 ******************************************************************
+. 
+. import delimited using "raw_data/Teacher data.csv", ///
+>     clear varnames(1) encoding("UTF-8")
+(11 vars, 601 obs)
+
+. 
+. * Check missing identifiers and duplicate school-teacher combinations.
+. list schoolid teacherid if missing(schoolid, teacherid), noobs
+
+. 
+. duplicates tag schoolid teacherid, generate(duplicate_id)
+
+Duplicates in terms of schoolid teacherid
+
+. list if duplicate_id > 0, noobs
+
+  +-------------------------------------------------------------------------------------------------------------------------------------+
+  | schoolid   teache~d                name   gender   age   u6_day   u6_mnth   u6_year       position   sub_te~h   grade_~h   duplic~d |
+  |-------------------------------------------------------------------------------------------------------------------------------------|
+  |   108210          1   Clarisse Ngoupani        2    25       24         6      1999   HEAD TEACHER          1          6          1 |
+  |   108210          1                            .     .        .         .         .                         .          .          1 |
+  +-------------------------------------------------------------------------------------------------------------------------------------+
+
+. 
+. * Gender: 1 = Male; 2 = Female.
+. list schoolid teacherid gender if !inlist(gender, 1, 2), noobs
+
+  +------------------------------+
+  | schoolid   teache~d   gender |
+  |------------------------------|
+  |   108210          1        . |
+  +------------------------------+
+
+. 
+. * Position is supplied as text rather than the codebook's numeric codes.
+. * Check the corresponding permitted descriptions.
+. list schoolid teacherid position if ///
+>     !inlist(upper(strtrim(position)), ///
+>     "HEAD TEACHER", "DEPUTY HEAD TEACHER", "SENIOR TEACHER", ///
+>     "OTHER", "OTHER (SPECIFY)"), noobs
+
+  +--------------------------------+
+  | schoolid   teache~d   position |
+  |--------------------------------|
+  |   108210          1            |
+  +--------------------------------+
+
+. 
+. * Subject: codes 1-8, 11-13, or -96 = Other.
+. list schoolid teacherid sub_teach if ///
+>     !inlist(sub_teach, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, -96), noobs
+
+  +--------------------------------+
+  | schoolid   teache~d   sub_te~h |
+  |--------------------------------|
+  |   108210          1          . |
+  +--------------------------------+
+
+. 
+. * Grade: integers from 1 to 6.
+. list schoolid teacherid grade_teach if ///
+>     !inlist(grade_teach, 1, 2, 3, 4, 5, 6), noobs
+
+  +--------------------------------+
+  | schoolid   teache~d   grade_~h |
+  |--------------------------------|
+  |   108210          1          . |
+  +--------------------------------+
+
+. 
+. * Age should be reported in whole years.
+. * Ages outside 18-100 are flagged for review, not automatically corrected:
+. * this is a plausibility threshold, not a codebook restriction.
+. list schoolid teacherid age if ///
+>     missing(age) | age != floor(age) | !inrange(age, 18, 100), noobs
+
+  +---------------------------+
+  | schoolid   teache~d   age |
+  |---------------------------|
+  |   108210          1     . |
+  +---------------------------+
+
+. 
+. * Check birth-date components and whether they form a valid calendar date.
+. gen double dob = mdy(u6_mnth, u6_day, u6_year)
+(1 missing value generated)
+
+. format dob %tdDDmonCCYY
+
+. label variable dob "Date of birth"
+
+. 
+. list schoolid teacherid u6_day u6_mnth u6_year if ///
+>     missing(dob) | u6_day != floor(u6_day) | ///
+>     u6_mnth != floor(u6_mnth) | u6_year != floor(u6_year), noobs
+
+  +--------------------------------------------------+
+  | schoolid   teache~d   u6_day   u6_mnth   u6_year |
+  |--------------------------------------------------|
+  |   108210          1        .         .         . |
+  +--------------------------------------------------+
+
+. 
+. * CORRECTION: school 108210, teacher 1 appears twice.
+. * One row contains the teacher's details; the other has an entirely empty
+. * response section. Remove only that empty duplicate, keeping the complete row.
+. drop if schoolid == 108210 & teacherid == 1 & duplicate_id > 0 ///
+>     & strtrim(name) == "" & strtrim(position) == "" ///
+>     & missing(gender) & missing(age) ///
+>     & missing(u6_day) & missing(u6_mnth) & missing(u6_year) ///
+>     & missing(sub_teach) & missing(grade_teach)
+(1 observation deleted)
+
+. 
+. drop duplicate_id
+
+. 
+. * Verify that each school-teacher combination is now unique.
+. isid schoolid teacherid
+
+. 
+. * Save the cleaned teacher dataset.
+. save "clean_data/teacher_clean.dta", replace
+file clean_data/teacher_clean.dta saved
+
+. 
+. /* COMMENT:
+> The raw teacher dataset contains 601 records. One is an empty duplicate
+> for school 108210, teacher 1; removing it leaves 600 records.
+> The remaining categorical responses match the codebook's permitted values.
+> Role composition within schools and grade-subject consistency are checked
+> in the following exercises.
+> */
+. 
+. * QUESWTION 11 *****************************************************************
+. 
+. *Each school should list three teachers: one Head Teacher, one Deputy Head Teacher and one Senior Teacher.
+. 
+. bysort schoolid: gen n_respondents = _N
+
+. bysort schoolid: egen n_head = ///
+>     total(upper(strtrim(position)) == "HEAD TEACHER")
+
+. bysort schoolid: egen n_deputy = ///
+>     total(upper(strtrim(position)) == "DEPUTY HEAD TEACHER")
+
+. bysort schoolid: egen n_senior = ///
+>     total(upper(strtrim(position)) == "SENIOR TEACHER")
+
+. 
+. gen byte protocol_ok = n_respondents == 3 & ///
+>     n_head == 1 & n_deputy == 1 & n_senior == 1
+
+. 
+. * Report results once per school.
+. egen school_tag = tag(schoolid)
+
+. tabulate protocol_ok if school_tag
+
+protocol_ok |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |          2        1.00        1.00
+          1 |        198       99.00      100.00
+------------+-----------------------------------
+      Total |        200      100.00
+
+. 
+. list schoolid n_respondents n_head n_deputy n_senior ///
+>     if school_tag & !protocol_ok, noobs
+
+  +----------------------------------------------------+
+  | schoolid   n_resp~s   n_head   n_deputy   n_senior |
+  |----------------------------------------------------|
+  |   104204          3        2          0          1 |
+  |   110205          3        0          1          2 |
+  +----------------------------------------------------+
+
+. 
+. /* COMMENT:
+> After removing the empty duplicate, all 200 schools have three respondents,
+> but two schools do not follow the required role composition.
+> School 104204 has two Head Teachers and no Deputy Head Teacher.
+> School 110205 has two Senior Teachers and no Head Teacher.
+> Thus, 198 of 200 schools (99%) comply with the listing protocol.
+> Retain the reported roles: there is insufficient information to correct them.
+> */
+. 
+. * QUESTION 12 ******************************************************************
+. 
+. use "clean_data/teacher_clean.dta", clear
+
+. 
+. * Exclude teachers from the school that withdrew consent.
+. drop if schoolid == 107204
+(3 observations deleted)
+
+. 
+. * Merge school and village information onto each teacher.
+. merge m:1 schoolid using "clean_data/admin_school_clean.dta"
+
+    Result                      Number of obs
+    -----------------------------------------
+    Not matched                             0
+    Matched                               597  (_merge==3)
+    -----------------------------------------
+
+. 
+. * Check that all observations matched.
+. tabulate _merge
+
+   Matching result from |
+                  merge |      Freq.     Percent        Cum.
+------------------------+-----------------------------------
+            Matched (3) |        597      100.00      100.00
+------------------------+-----------------------------------
+                  Total |        597      100.00
+
+. assert _merge == 3
+
+. drop _merge
+
+. 
+. * Verify the teacher-level identifiers and save the merged dataset.
+. isid schoolid teacherid
+
+. save "clean_data/teacher_school_admin_clean.dta", replace
+file clean_data/teacher_school_admin_clean.dta saved
+
+. 
+. * QUESTION 13 ******************************************************************
+. 
+. *Grades 1-2 should only teach Counting (11), Reading (12) or Writing (13).
+. gen byte subject_inconsistent = ///
+>     inlist(grade_teach, 1, 2) & !inlist(sub_teach, 11, 12, 13) ///
+>     if !missing(grade_teach, sub_teach)
+
+. 
+. * Count and display violations.
+. count if subject_inconsistent == 1
+  1
+
+. list schoolid teacherid grade_teach sub_teach ///
+>     if subject_inconsistent == 1, noobs
+
+  +-------------------------------------------+
+  | schoolid   teache~d   grade_~h   sub_te~h |
+  |-------------------------------------------|
+  |   101105          1          1          1 |
+  +-------------------------------------------+
+
+. 
+. /* COMMENT:
+> One inconsistency is identified: teacher 1 in school 101105 reports
+> teaching Maths (subject code 1) in Grade 1, where only Counting, Reading
+> and Writing are permitted. Retain the reported values and flag the record
+> for clarification, since we cannot determine whether subject or grade is wrong.
+> */
+. 
+. * QUESTION 14 ******************************************************************
+. 
+. *Summary statistics by school ownership: 1 = Public, 2 = Private.
+. label define own_lbl 1 "Public" 2 "Private", replace
+
+. label values own own_lbl
+
+. 
+. * Print the requested table; exclude unknown or missing ownership.
+. tabstat age gender if inlist(own, 1, 2), by(own) ///
+>     statistics(n mean range sd min max p5 p90) columns(statistics)
+
+Summary for variables: age gender
+Group variable: own 
+
+    own |         N      Mean     Range        SD       Min       Max        p5       p90
+--------+--------------------------------------------------------------------------------
+ Public |       420  33.67857        42  9.381799        20        62        22        46
+        |       420  1.430952         1  .4958001         1         2         1         2
+--------+--------------------------------------------------------------------------------
+Private |       174  33.25287        42  8.614034        20        62        21        45
+        |       174  1.436782         1  .4974188         1         2         1         2
+--------+--------------------------------------------------------------------------------
+  Total |       594  33.55387        42  9.158413        20        62        22        46
+        |       594   1.43266         1  .4958621         1         2         1         2
+-----------------------------------------------------------------------------------------
+
+. 
+. * Export the same statistics to CSV.
+. preserve
+
+. 
+. tempfile summary
+
+. tempname results
+
+. postfile `results' str7 school_type str6 variable long n ///
+>     double mean range sd minimum maximum p5 p90 using `summary', replace
+(file /var/folders/nd/_fd08bgj57560pfdl9wxkf200000gn/T//S_21206.000003 not found)
+
+. 
+. foreach g in 1 2 {
+  2.     local school_type "Public"
+  3.     if `g' == 2 local school_type "Private"
+  4. 
+.     foreach v in age gender {
+  5.         quietly summarize `v' if own == `g', detail
+  6.         post `results' ("`school_type'") ("`v'") ///
+>             (r(N)) (r(mean)) (r(max)-r(min)) (r(sd)) ///
+>             (r(min)) (r(max)) (r(p5)) (r(p90))
+  7.     }
+  8. }
+
+. 
+. postclose `results'
+
+. use `summary', clear
+
+. export delimited using "outputs/teacher_summary_by_ownership.csv", replace
+file outputs/teacher_summary_by_ownership.csv saved
+
+. 
+. restore
+
+. 
+. /* COMMENT:
+> Statistics are calculated separately for teachers in public and private schools.
+> Range equals maximum minus minimum. Gender is coded 1 = Male, 2 = Female:
+> its mean minus 1 equals the proportion female among nonmissing responses.
+> The remaining gender statistics describe category codes, not a continuous trait.
+> */
+. 
+. /* OPTIONAL EXTENSION: Planning a school-randomized trial
+> 
+> These are baseline data: treatment effects cannot be estimated.
+> This section:
+> 1. Generates an illustrative allocation within villages.
+> 2. Provides balance checks conditional on receiving REAL assignment data.
+> 
+> The proposed allocation is not the assignment used in the original trial.
+> */
+. 
+. /* OPTIONAL ANALYSIS: Simulated school-level randomization
+> Randomly allocate approximately half the schools to treatment, then examine
+> baseline balance. This is a proposed allocation, not the actual RCT assignment.
+> */
+. 
+. preserve
+
+. use "clean_data/admin_school_clean.dta", clear
+
+. isid schoolid
+
+. 
+. * 1. Randomly allocate schools to treatment.
+. * Sort before setting the seed so the allocation is reproducible.
+. sort schoolid
+
+. set seed 20261010
+
+. 
+. gen double random_number = runiform()
+
+. sort random_number schoolid
+
+. 
+. * With 199 schools, assign 99 to treatment and 100 to control.
+. gen byte treatment = _n <= floor(_N/2)
+
+. label define treatment_lbl 0 "Control" 1 "Treatment", replace
+
+. label values treatment treatment_lbl
+
+. tabulate treatment
+
+  treatment |      Freq.     Percent        Cum.
+------------+-----------------------------------
+    Control |        100       50.25       50.25
+  Treatment |         99       49.75      100.00
+------------+-----------------------------------
+      Total |        199      100.00
+
+. 
+. * 2. Prepare baseline characteristics for balance checks.
+. * Treat unknown ownership as missing rather than as Public.
+. gen byte private_school = own == 2 if inlist(own, 1, 2)
+(1 missing value generated)
+
+. 
+. * Category indicators allow comparisons of proportions across groups.
+. gen byte urban = type == 1 if !missing(type)
+
+. gen byte rural = type == 2 if !missing(type)
+
+. gen byte mixed = type == 3 if !missing(type)
+
+. 
+. * Use the actual region names supplied in the data.
+. gen byte ouaka = lower(strtrim(region)) == "ouaka" ///
+>     if strtrim(region) != ""
+
+. 
+. * Define the characteristics before examining balance.
+. local characteristics totstuds tot_classrooms tot_teach ///
+>     private_school urban rural mixed ouaka
+
+. 
+. * Print means, standard deviations and nonmissing sample sizes.
+. * Means of binary indicators represent proportions.
+. tabstat `characteristics', by(treatment) ///
+>     statistics(n mean sd) columns(statistics)
+
+Summary for variables: totstuds tot_classrooms tot_teach private_school urban rural mixed ouaka
+Group variable: treatment 
+
+treatment |         N      Mean        SD
+----------+------------------------------
+  Control |       100    149.08  56.17302
+          |       100     13.83  4.605782
+          |       100     13.37  3.907142
+          |       100       .25  .4351941
+          |       100       .55        .5
+          |       100       .36  .4824182
+          |       100       .09  .2876235
+          |       100       .49  .5024184
+----------+------------------------------
+Treatment |        99  146.2727  55.28605
+          |        99  13.57576  4.573863
+          |        99  13.17172  3.851955
+          |        98  .3367347  .4750231
+          |        99  .4545455  .5004636
+          |        99  .4343434   .498193
+          |        99  .1111111   .315869
+          |        99  .5050505  .5025189
+----------+------------------------------
+    Total |       199  147.6834  55.61044
+          |       199  13.70352  4.580099
+          |       199  13.27136  3.871253
+          |       198  .2929293  .4562599
+          |       199  .5025126  .5012547
+          |       199  .3969849  .4905068
+          |       199  .1005025  .3014272
+          |       199  .4974874  .5012547
+-----------------------------------------
+
+.         
+. local characteristics totstuds tot_classrooms tot_teach ///
+>     private_school urban rural mixed ouaka
+
+.         
+. /* COMMENT:
+> The simulated randomization assigns 99 schools to treatment and 100 to control.
+> Average enrolment, classroom counts, teacher counts and regional composition
+> are similar across groups. However, treatment schools are more often private
+> (33.67% versus 25.00%) and less often urban (45.45% versus 55.00%).
+> One treated school has unknown ownership and is excluded from that comparison.
+> 
+> These descriptive differences reflect possible chance imbalances, not evidence
+> that randomization failed. Stratifying by ownership or location could improve
+> balance on these characteristics in a future design.
+> */
+. 
+. 
+end of do-file
+
+. save "clean_data/teacher_school_admin_clean.dta", replace
+(file clean_data/teacher_school_admin_clean.dta not found)
+file clean_data/teacher_school_admin_clean.dta could not be opened
+r(603);
+
+. use "/Users/zoedilieto/Desktop/els_02_12_byf3pststu_v1_0.dta"
+no; dataset in memory has changed since last saved
+r(4);
+
+. save "clean_data/teacher_school_admin_clean.dta", replace
+(file clean_data/teacher_school_admin_clean.dta not found)
+file clean_data/teacher_school_admin_clean.dta could not be opened
+r(603);
+
+. use "/Users/zoedilieto/Desktop/els_02_12_byf3pststu_v1_0.dta"
+no; dataset in memory has changed since last saved
+r(4);
+
+. use "/Users/zoedilieto/Desktop/els_02_12_byf3pststu_v1_0.dta", clear
+
+. browse BYS41C F1S26E BYTXMSTD F1TXMSTD F1RGPP2 BYSES2
+
+. reg BYS41C BYTXMSTD BYSES2
+
+      Source |       SS           df       MS      Number of obs   =    16,197
+-------------+----------------------------------   F(2, 16194)     =   4751.80
+       Model |   22114.069         2  11057.0345   Prob > F        =    0.0000
+    Residual |  37682.0666    16,194  2.32691531   R-squared       =    0.3698
+-------------+----------------------------------   Adj R-squared   =    0.3697
+       Total |  59796.1356    16,196  3.69203109   Root MSE        =    1.5254
+
+------------------------------------------------------------------------------
+      BYS41C | Coefficient  Std. err.      t    P>|t|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+    BYTXMSTD |   .0083098   .0011871     7.00   0.000     .0059829    .0106366
+      BYSES2 |   .7259621   .0098939    73.37   0.000      .706569    .7453553
+       _cons |  -.6845153   .0617025   -11.09   0.000     -.805459   -.5635716
+------------------------------------------------------------------------------
+
+. graph use "/Users/zoedilieto/Desktop/TESI 2 (?)/output/els2002/did_government_exam.gph"
+
+. `Student-government participation among students in the top 25% of math scores in both years`
+` is not a valid command name
+r(199);
+
+. graph use "/Users/zoedilieto/Desktop/TESI 2 (?)/output/els2002/did_government_exam_top25.gph"
+
